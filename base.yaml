@@ -109,12 +109,6 @@ script:
             id(color_hue).publish_state(360 - theta / M_PI * 180);
             id(color_saturation).publish_state(min(r, (float)100));
           }
-
-          // publish state
-          id(touch_r).publish_state(r);
-          id(touch_theta).publish_state(theta);
-          id(touch_x).publish_state(x);
-          id(touch_y).publish_state(y);
       - component.update: my_lcd
 
 external_components:
@@ -219,34 +213,6 @@ number:
     max_value: 1
     step: 0.001
     optimistic: true
-  - platform: template
-    id: touch_r
-    initial_value: 120
-    min_value: 0
-    max_value: 120
-    step: 0.1
-    optimistic: true
-  - platform: template
-    id: touch_theta
-    initial_value: 0 #0.79
-    min_value: 0
-    max_value: 6.283 # 2π
-    step: 0.001
-    optimistic: true
-  - platform: template
-    id: touch_x
-    initial_value: 0
-    min_value: 0
-    max_value: 120
-    step: 1
-    optimistic: true
-  - platform: template
-    id: touch_y
-    initial_value: 0
-    min_value: 0
-    max_value: 240
-    step: 1
-    optimistic: true
 
 
   # - platform: ld2410
@@ -346,18 +312,11 @@ display:
           it.image(150, 90, color_temp_thumbnail, ImageAlign::CENTER);
           it.image(90, 150, mdi_sun_compass, ImageAlign::CENTER);
           it.image(150, 150, color_wheel_thumbnail, ImageAlign::CENTER);
-
-          float r = id(touch_r).state;
-          float theta = id(touch_theta).state;
-          int x = 120 + r * cos(theta);
-          int y = 120 - r * sin(theta);
-          it.circle(x, y, 8, Color(255, 0, 0));
-          it.circle(id(touch_x).state, id(touch_y).state, 12, Color(0, 0, 255));
       - id: LightColorPage
         lambda: |-
           it.image(120, 120, color_wheel, ImageAlign::CENTER);
-          float r = min(id(touch_r).state, (float)100);
-          float theta = id(touch_theta).state;
+          float r = id(color_saturation).state;
+          float theta =  (360 - id(color_hue).state) / 180 * M_PI;
           int x = 120 + r * cos(theta);
           int y = 120 - r * sin(theta);
           it.circle(x, y, 11, Color(0, 0, 0));
