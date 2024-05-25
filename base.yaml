@@ -1,0 +1,565 @@
+# forked from https://github.com/dgaust/esphome_files/blob/547090c/m5dial.yaml
+esphome:
+  name: m5dial_light_control
+  friendly_name: M5Dial Light Control
+  on_boot:
+    then:
+     # read the RTC time once when the system boots
+      - pcf8563.read_time: my_time
+      - light.turn_on: backlight
+      - text_sensor.template.publish:
+          id: template_text
+          state: !lambda |-
+              char str[17];
+              time_t currTime = id(my_time).now().timestamp;
+              strftime(str, sizeof(str), "%Y-%M-%d %H:%M", localtime(&currTime));
+              return  { str };
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+    platform_version: 6.6.0
+
+# Enable logging
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret m5dial_encryption_key
+
+ota:
+  password: !secret m5dial_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  # ap:
+  #   ssid: "M5Dial Lose Fallback Hotspot"
+  #   password: !secret wifi_password
+
+# captive_portal:
+
+substitutions:
+  # Add the ids of the devices you want to control here
+  light_control: light.lamp_tapo
+  media_player_control: media_player.full_speaker_2
+  climate_control: climate.thermostat
+  script_delay: 1s
+
+script:
+  - id: my_light_brightness_script
+    mode: restart
+    then:
+      - delay: $script_delay
+      - homeassistant.service:
+          service: light.turn_on
+          data_template:
+            entity_id: $light_control
+            brightness: !lambda 'return id(new_light_brightness).state;'
+  - id: update_touch_script
+    mode: restart
+    parameters:
+      x: int
+      y: int
+    then:
+      - lambda: |-
+          // adjust center or coordinate plane to (120, 120)
+          float polar_x = x - 120;
+          float polar_y = 120 - y; // Screen y is opposite of cartesian
+
+          // convert to polar coords
+          float r = sqrt(pow(polar_x, 2) + pow(polar_y, 2));
+          float theta = atan(polar_y / polar_x);
+          if (polar_x < 0) {
+            theta += M_PI;  // Adjust atan for quadrants 2 & 3.
+          } else if (polar_y < 0) {
+            theta += 2 * M_PI;  // Make quadrant 4 value positive.
+          }
+
+          // publish state
+          id(touch_r).publish_state(r);
+          id(touch_theta).publish_state(theta);
+          id(touch_x).publish_state(x);
+          id(touch_y).publish_state(y);
+      - component.update: my_lcd
+
+external_components:
+  - source: github://dgaust/esphome@gc9a01
+    components: [ ft3267 ]
+    refresh: 0s
+
+i2c:
+  - id: bus_internal
+    sda: GPIO11
+    scl: GPIO12
+    scan: False
+
+touchscreen:
+  platform: ft3267
+  on_update:
+    then:
+    - lambda: |-
+        for (auto touch: touches) {
+          if (touch.state <= 2) {
+            id(update_touch_script)->execute(touch.x, touch.y);
+          }
+        }
+
+time:
+  - platform: pcf8563
+    id: my_time
+    address: 0x51
+    update_interval: never
+  - platform: homeassistant
+    on_time_sync:
+      then:
+        - pcf8563.write_time: my_time
+        - text_sensor.template.publish:
+            id: template_text
+            state: !lambda |-
+              char str[17];
+              time_t currTime = id(my_time).now().timestamp;
+              strftime(str, sizeof(str), "%Y-%m-%d %H:%M", localtime(&currTime));
+              return  { str };
+
+# rc522_i2c:
+#   i2c_id:  bus_internal
+#   address: 0x28
+#   on_tag:
+#     then:
+#       - rtttl.play: "success:d=24,o=5,b=100:c,g,b"
+#       - homeassistant.tag_scanned: !lambda 'return x;'
+
+# rtttl:
+#   output: my_speaker_output
+#   id: my_rtttl
+
+<<: !include assets/colors.yaml
+<<: !include assets/images.yaml
+
+font:
+  - id: roboto16
+    file: "gfonts://Roboto"
+    size: 16
+
+  - id: roboto20
+    file: "gfonts://Roboto"
+    size: 20
+
+  - id: roboto24
+    file: "gfonts://Roboto"
+    size: 24
+
+uart:
+  tx_pin: GPIO2
+  rx_pin: GPIO1
+  baud_rate: 256000
+  parity: NONE
+  stop_bits: 1
+
+# ld2410:
+
+spi:
+  mosi_pin: GPIO5
+  clk_pin: GPIO6
+
+number:
+
+  - platform: template
+    id: touch_r
+    initial_value: 120
+    min_value: 0
+    max_value: 120
+    step: 0.1
+    optimistic: true
+  - platform: template
+    id: touch_theta
+    initial_value: 0 #0.79
+    min_value: 0
+    max_value: 6.283 # 2π
+    step: 0.001
+    optimistic: true
+  - platform: template
+    id: touch_x
+    initial_value: 0
+    min_value: 0
+    max_value: 120
+    step: 1
+    optimistic: true
+  - platform: template
+    id: touch_y
+    initial_value: 0
+    min_value: 0
+    max_value: 240
+    step: 1
+    optimistic: true
+
+
+  # - platform: ld2410
+  #   timeout:
+  #     name: timeout
+  #   light_threshold:
+  #     name: light threshold
+  #   max_move_distance_gate:
+  #     name: max move distance gate
+  #   max_still_distance_gate:
+  #     name: max still distance gate
+  #   g0:
+  #     move_threshold:
+  #       name: g0 move threshold
+  #     still_threshold:
+  #       name: g0 still threshold
+  #   g1:
+  #     move_threshold:
+  #       name: g1 move threshold
+  #     still_threshold:
+  #       name: g1 still threshold
+  #   g2:
+  #     move_threshold:
+  #       name: g2 move threshold
+  #     still_threshold:
+  #       name: g2 still threshold
+  #   g3:
+  #     move_threshold:
+  #       name: g3 move threshold
+  #     still_threshold:
+  #       name: g3 still threshold
+  #   g4:
+  #     move_threshold:
+  #       name: g4 move threshold
+  #     still_threshold:
+  #       name: g4 still threshold
+  #   g5:
+  #     move_threshold:
+  #       name: g5 move threshold
+  #     still_threshold:
+  #       name: g5 still threshold
+  #   g6:
+  #     move_threshold:
+  #       name: g6 move threshold
+  #     still_threshold:
+  #       name: g6 still threshold
+  #   g7:
+  #     move_threshold:
+  #       name: g7 move threshold
+  #     still_threshold:
+  #       name: g7 still threshold
+  #   g8:
+  #     move_threshold:
+  #       name: g8 move threshold
+  #     still_threshold:
+  #       name: g8 still threshold
+
+  - platform: template
+    id: new_light_brightness
+    initial_value: 0
+    min_value: 0
+    max_value: 255
+    step: 1
+    optimistic: true
+
+  # - platform: template
+  #   id: pi
+  #   internal: true
+  #   optimistic: true
+  #   min_value: 3.14159265359
+  #   max_value: 3.14159265360
+  #   step: 0.00000000001
+  #   initial_value: 3.14159265359
+
+
+display:
+  - platform: ili9xxx
+    model: gc9a01a
+    reset_pin: GPIO8
+    id: my_lcd
+    cs_pin: GPIO7
+    dc_pin: GPIO4
+    dimensions:
+      height: 240
+      width: 240
+    pages:
+      - id: LightLevelPage
+        lambda: |-
+          Color black = Color(0, 0, 0);
+          Color light_grey = id(light_grey_color);
+          it.filled_circle(120, 120, 120, light_grey);
+          it.filled_circle(120, 120, 90, black);
+
+          it.image(90, 90, mdi_brightness_6, ImageAlign::CENTER);
+          it.image(150, 90, color_temp_thumbnail, ImageAlign::CENTER);
+          it.image(90, 150, mdi_sun_compass, ImageAlign::CENTER);
+          it.image(150, 150, color_wheel_thumbnail, ImageAlign::CENTER);
+
+          float r = id(touch_r).state;
+          float theta = id(touch_theta).state;
+          int x = 120 + r * cos(theta);
+          int y = 120 - r * sin(theta);
+          it.circle(x, y, 8, Color(255, 0, 0));
+          it.circle(id(touch_x).state, id(touch_y).state, 12, Color(0, 0, 255));
+      - id: LightColorPage
+        lambda: |-
+          it.image(120, 120, color_wheel, ImageAlign::CENTER);
+          float r = min(id(touch_r).state, (float)100);
+          float theta = id(touch_theta).state;
+          int x = 120 + r * cos(theta);
+          int y = 120 - r * sin(theta);
+          it.circle(x, y, 11, Color(0, 0, 0));
+          it.circle(x, y, 10, Color(255, 255, 255));
+
+
+binary_sensor:
+  - platform: touchscreen
+    name: "Brightness Touch"
+    x_min: 60
+    x_max: 120
+    y_min: 60
+    y_max: 120
+    page_id: LightLevelPage
+    on_press:
+        - logger.log: "Brightness Touched"
+  - platform: touchscreen
+    name: "Color Temp Touch"
+    x_min: 120
+    x_max: 180
+    y_min: 60
+    y_max: 120
+    page_id: LightLevelPage
+    on_press:
+      then:
+        - logger.log: "Color Temp Touched"
+  - platform: touchscreen
+    name: "Sun Tracking Touch"
+    x_min: 60
+    x_max: 120
+    y_min: 120
+    y_max: 180
+    page_id: LightLevelPage
+    on_press:
+      then:
+        - logger.log: "Sun Tracking Touched"
+  - platform: touchscreen
+    name: "Color Touch"
+    page_id: LightLevelPage
+    x_min: 120
+    x_max: 180
+    y_min: 120
+    y_max: 180
+    on_press:
+      then:
+        - logger.log: "Color Touched"
+        - display.page.show: LightColorPage
+
+
+  - platform: gpio
+    pin: GPIO42
+    name: "BacklightButton"
+    on_press:
+      - if:
+          condition:
+            display.is_displaying_page: LightColorPage
+          then:
+            - display.page.show: LightLevelPage
+          else:
+            - light.toggle: backlight
+
+  # - platform: ld2410
+  #   has_target:
+  #     name: Presence
+  #   has_moving_target:
+  #     name: Moving Target
+  #   has_still_target:
+  #     name: Still Target
+
+sensor:
+
+  - platform: rotary_encoder
+    name: "Rotary Encoder"
+    id: rotaryencoder
+    resolution: 1
+    pin_a:
+      number: GPIO40
+      mode:
+       input: true
+       pullup: true
+    pin_b:
+      number: GPIO41
+      mode:
+       input: true
+       pullup: true
+    accuracy_decimals: 1
+    on_clockwise:
+      - then:
+          - lambda: |-
+              int newvalue = id(new_light_brightness).state;
+              if (newvalue > 245) {
+                id(new_light_brightness).publish_state(255); }
+              else {
+                id(new_light_brightness).publish_state(id(new_light_brightness).state + 10); }
+          # - component.update: my_lcd
+          - script.execute: my_light_brightness_script
+
+
+    on_anticlockwise:
+      - then:
+          - lambda: |-
+              int newvalue = id(new_light_brightness).state;
+              if (newvalue < 10) {
+                id(new_light_brightness).publish_state(0); }
+              else {
+                id(new_light_brightness).publish_state(id(new_light_brightness).state - 10); }
+          # - component.update: my_lcd
+          - script.execute: my_light_brightness_script
+
+
+
+  - platform: homeassistant
+    name: "Media Volume"
+    id: "beam_volume"
+    entity_id: media_player.full_speaker_2
+    attribute: volume_level
+  # - platform: ld2410
+  #   detection_distance:
+  #     name: Detection Distance
+  #     id: ddistance
+  #     filters:
+  #       - throttle: 0.5s
+  #     on_value:
+  #       then:
+  #         if:
+  #           condition:
+  #             - lambda: 'return id(ddistance).state < 150;'
+  #           then:
+  #             if:
+  #               condition:
+  #                 - light.is_off: backlight
+  #               then:
+  #                 - light.turn_on: backlight
+  #           else:
+  #             - light.turn_off:
+  #                 id: backlight
+  #                 transition_length: 1s
+  #   light:
+  #     name: light
+  #   moving_distance:
+  #     name : Moving Distance
+  #   still_distance:
+  #     name: Still Distance
+  #   moving_energy:
+  #     name: Move Energy
+  #   still_energy:
+  #     name: Still Energy
+  #   g0:
+  #       move_energy:
+  #         name: g0 move energy
+  #       still_energy:
+  #         name: g0 still energy
+  #   g1:
+  #     move_energy:
+  #       name: g1 move energy
+  #     still_energy:
+  #       name: g1 still energy
+  #   g2:
+  #     move_energy:
+  #       name: g2 move energy
+  #     still_energy:
+  #       name: g2 still energy
+  #   g3:
+  #     move_energy:
+  #       name: g3 move energy
+  #     still_energy:
+  #       name: g3 still energy
+  #   g4:
+  #     move_energy:
+  #       name: g4 move energy
+  #     still_energy:
+  #       name: g4 still energy
+  #   g5:
+  #     move_energy:
+  #       name: g5 move energy
+  #     still_energy:
+  #       name: g5 still energy
+  #   g6:
+  #     move_energy:
+  #       name: g6 move energy
+  #     still_energy:
+  #       name: g6 still energy
+  #   g7:
+  #     move_energy:
+  #       name: g7 move energy
+  #     still_energy:
+  #       name: g7 still energy
+  #   g8:
+  #     move_energy:
+  #       name: g8 move energy
+  #     still_energy:
+  #       name: g8 still energy
+
+  - platform: homeassistant
+    name: "Dimmer Light Brightness"
+    id: "dimmersensor_brightness"
+    entity_id: $light_control
+    attribute: brightness
+    on_value:
+      if:
+        condition:
+          not:
+            - script.is_running: my_light_brightness_script
+        then:
+          - lambda: 'id(new_light_brightness).publish_state(x);'
+          # - component.update: my_lcd
+
+light:
+  - platform: monochromatic
+    id: backlight
+    name: "Backlight"
+    output: oledbacklight
+    default_transition_length: 250ms
+
+output:
+  - id: oledbacklight
+    platform: ledc
+    pin: GPIO9
+    max_power: 1
+    min_power: 0
+  # - platform: ledc
+  #   pin: GPIO3
+  #   id: my_speaker_output
+
+# switch:
+#   - platform: ld2410
+#     engineering_mode:
+#       name: "engineering mode"
+#     bluetooth:
+#       name: "control bluetooth"
+
+text_sensor:
+
+  # - platform: ld2410
+  #   version:
+  #     name: "firmware version"
+  #   mac_address:
+  #     name: "mac address"
+  - platform: homeassistant
+    name: "Dimmer Light Sensor"
+    id: "dimmersensor"
+    entity_id: $light_control
+    filters:
+      - to_upper:
+  - platform: homeassistant
+    name: "Media Player Mute"
+    id: "mediaplayermute"
+    entity_id: media_player.full_speaker_2
+    attribute: is_volume_muted
+  - platform: template
+    name: "RTC Sensor"
+    id: template_text
+  - platform: wifi_info
+    ip_address:
+      name: ESP IP Address
+      id: espip
+

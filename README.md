@@ -1,0 +1,1 @@
+Based on work by dgaust and others [in this thread](https://community.home-assistant.io/t/m5stack-dial-esp32-s3-smart-rotary-knob/623518). The original YAML by dgaust was copied from [here](https://github.com/dgaust/esphome_files/blob/547090c/m5dial.yaml).
