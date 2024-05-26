@@ -436,23 +436,22 @@ sensor:
     on_clockwise:
       - then:
           - lambda: |-
-              int newvalue = id(new_light_brightness).state;
-              if (newvalue > 245) {
-                id(new_light_brightness).publish_state(255); }
-              else {
-                id(new_light_brightness).publish_state(id(new_light_brightness).state + 10); }
-          # - component.update: my_lcd
-          - script.execute: my_light_brightness_script
+              float value = id(dimmer_value).state;
+              if (value < 1) {
+                id(dimmer_value).publish_state(min(value = 1 / 256.0, (float)1));
+              }
+          - component.update: my_lcd
+          # - script.execute: my_light_brightness_script
     on_anticlockwise:
       - then:
           - lambda: |-
-              int newvalue = id(new_light_brightness).state;
-              if (newvalue < 10) {
-                id(new_light_brightness).publish_state(0); }
-              else {
-                id(new_light_brightness).publish_state(id(new_light_brightness).state - 10); }
-          # - component.update: my_lcd
-          - script.execute: my_light_brightness_script
+              float min_value = 1 / 256.0;
+              float value = id(dimmer_value).state;
+              if (value > min_value) {
+                id(dimmer_value).publish_state(max(value - min_value, min_value));
+              }
+          - component.update: my_lcd
+          # - script.execute: my_light_brightness_script
 
 
   - platform: homeassistant
