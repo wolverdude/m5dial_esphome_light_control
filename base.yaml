@@ -45,13 +45,11 @@ wifi:
 
 substitutions:
   # Add the ids of the devices you want to control here
-  light_control: light.lamp_tapo
-  media_player_control: media_player.full_speaker_2
-  climate_control: climate.thermostat
-  script_delay: 1s
+  light_control: light.master_bedroom_lights
+  script_delay: 0.8s
 
 script:
-  - id: my_light_brightness_script
+  - id: update_brightness_script
     mode: restart
     then:
       - delay: $script_delay
@@ -59,17 +57,29 @@ script:
           service: light.turn_on
           data_template:
             entity_id: $light_control
-            brightness: !lambda 'return id(new_light_brightness).state;'
-  # - id: theta_to_value_script
-  #   mode: restart
-  #   parameters:
-  #     theta: float
-  #     min_theta: float
-  #     max_theta: float
-  #   then:
-  #     - lambda: |-
-  #       1 - theta / (max_theta - min_theta);
-  #       return max(0, min(1, theta));
+            brightness: !lambda |-
+              return id(dimmer_value).state * 256;
+  - id: update_color_temp_script
+    mode: restart
+    then:
+      - delay: $script_delay
+      - homeassistant.service:
+          service: light.turn_on
+          data_template:
+            entity_id: $light_control
+            color_temperature_kelvin: !lambda |-
+              return id(dimmer_value).state * 4000 + 2500;
+  - id: update_color_script
+    mode: restart
+    then:
+      - delay: $script_delay
+      - lambda: ""
+  #     - homeassistant.service:
+  #         service: light.turn_on
+  #         data_template:
+  #           entity_id: $light_control
+  #           hs_color: !lambda |-
+  #             return (float[]){id(color_hue).state, id(color_saturation).state};
   - id: update_touch_script
     mode: restart
     parameters:
@@ -104,10 +114,21 @@ script:
             id(dimmer_value).publish_state(
               1 - (test_theta - min_theta) / (max_theta - min_theta)
             );
+
+            // Update HA.
+            if (id(dimmer_mode).state == "brightness") {
+              id(update_brightness_script).execute();
+            } else if (id(dimmer_mode).state == "color_temp") {
+              id(update_color_temp_script).execute();
+            }
           }
+
           if (id(my_lcd).get_active_page() == id(LightColorPage)) {
             id(color_hue).publish_state(360 - theta / M_PI * 180);
             id(color_saturation).publish_state(min(r, (float)100));
+
+            // Update HA.
+            // id(update_color_script).execute();
           }
       - component.update: my_lcd
 
@@ -347,6 +368,7 @@ display:
 binary_sensor:
   - platform: touchscreen
     name: "Brightness Touch"
+    internal: true
     x_min: 60
     x_max: 120
     y_min: 60
@@ -361,6 +383,7 @@ binary_sensor:
         - component.update: my_lcd
   - platform: touchscreen
     name: "Color Temp Touch"
+    internal: true
     x_min: 120
     x_max: 180
     y_min: 60
@@ -375,6 +398,7 @@ binary_sensor:
         - component.update: my_lcd
   - platform: touchscreen
     name: "Sun Tracking Touch"
+    internal: true
     x_min: 60
     x_max: 120
     y_min: 120
@@ -384,6 +408,7 @@ binary_sensor:
       then:
         - logger.log: "Sun Tracking Touched"
   - platform: touchscreen
+    internal: true
     name: "Color Touch"
     page_id: LightLevelPage
     x_min: 120
@@ -455,18 +480,69 @@ sensor:
 
 
   - platform: homeassistant
-    name: "Dimmer Light Brightness"
-    id: "dimmersensor_brightness"
+    name: "Light Brightness"
+    id: "sensor_brightness"
     entity_id: $light_control
     attribute: brightness
     on_value:
       if:
         condition:
           not:
-            - script.is_running: my_light_brightness_script
+            - script.is_running: update_brightness_script
         then:
-          - lambda: 'id(new_light_brightness).publish_state(x);'
-          # - component.update: my_lcd
+          if:
+            condition:
+              and:
+                - display.is_displaying_page: LightLevelPage
+                - text_sensor.state:
+                    id: dimmer_mode
+                    state: brightness
+            then:
+              - lambda: id(dimmer_value).publish_state(x / 256);
+              - component.update: my_lcd
+  - platform: homeassistant
+    name: "Light Color Temp"
+    id: "sensor_color_temp"
+    entity_id: $light_control
+    attribute: color_temp_kelvin
+    on_value:
+      if:
+        condition:
+          not:
+            - script.is_running: update_color_temp_script
+        then:
+          if:
+            condition:
+              and:
+                - display.is_displaying_page: LightLevelPage
+                - text_sensor.state:
+                    id: dimmer_mode
+                    state: color_temp
+            then:
+              - lambda: |-
+                 id(dimmer_value).publish_state((x - 2500) / 4000);
+              - component.update: my_lcd
+  - platform: homeassistant
+    name: "Light Color"
+    id: "sensor_color"
+    entity_id: $light_control
+    attribute: hs_color
+    on_value:
+      if:
+        condition:
+          not:
+            - script.is_running: update_color_script
+        then:
+          if:
+            condition:
+              and:
+                - display.is_displaying_page: LightColorPage
+            then:
+              - lambda: |-
+                  ESP_LOGD("HS_COLOR", "%f", x);
+                #  id(color_hue).publish_state(x[0]);
+                #  id(color_saturation).publish_state(x[1]);
+              # - component.update: my_lcd
 
   # - platform: ld2410
   #   detection_distance:
