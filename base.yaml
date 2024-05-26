@@ -1,6 +1,6 @@
 # forked from https://github.com/dgaust/esphome_files/blob/547090c/m5dial.yaml
 esphome:
-  name: m5dial_light_control
+  name: m5diallightcontrol
   friendly_name: M5Dial Light Control
   on_boot:
     then:
@@ -68,7 +68,7 @@ script:
           data_template:
             entity_id: $light_control
             color_temperature_kelvin: !lambda |-
-              return id(dimmer_value).state * 4000 + 2500;
+              return id(dimmer_value).state * 4500 + 2000;
   - id: update_color_script
     mode: restart
     then:
@@ -110,7 +110,7 @@ script:
           }
           ESP_LOGD("THETA", "%f < %f < %f", min_theta, test_theta, max_theta);
           if (id(my_lcd).get_active_page() == id(LightLevelPage)
-              && r > 85 && min_theta < test_theta && test_theta < max_theta) {
+              && r > 80 && min_theta < test_theta && test_theta < max_theta) {
             id(dimmer_value).publish_state(
               1 - (test_theta - min_theta) / (max_theta - min_theta)
             );
@@ -314,8 +314,14 @@ display:
       - id: LightLevelPage
         lambda: |-
           Color black = Color(0, 0, 0);
-          Color light_grey = id(light_grey_color);
-          it.filled_circle(120, 120, 115, light_grey);
+          Color dimmer_color;
+          if (id(dimmer_mode).state == "brightness") {
+            dimmer_color = id(light_grey_color);
+          } else if (id(dimmer_mode).state == "color_temp") {
+            dimmer_color = id(ice_orange_color);
+          }
+
+          it.filled_circle(120, 120, 115, dimmer_color);
           it.filled_circle(120, 120, 90, black);
           // gap in dimmer
           it.filled_triangle(120, 120, 19, 240, 221, 240, black);
@@ -337,7 +343,7 @@ display:
             // right corner
             120 + 120 * cos(dim_theta - 0.1),
             120 - 120 * sin(dim_theta - 0.1),
-            mid_green_color);
+            dark_blue_color);
 
           // Place outlines on active icons.
           if (id(dimmer_mode).state == "brightness") {
@@ -520,7 +526,7 @@ sensor:
                     state: color_temp
             then:
               - lambda: |-
-                 id(dimmer_value).publish_state((x - 2500) / 4000);
+                 id(dimmer_value).publish_state((x - 2000) / 4500);
               - component.update: my_lcd
   - platform: homeassistant
     name: "Light Color"
@@ -542,7 +548,7 @@ sensor:
                   ESP_LOGD("HS_COLOR", "%f", x);
                 #  id(color_hue).publish_state(x[0]);
                 #  id(color_saturation).publish_state(x[1]);
-              # - component.update: my_lcd
+              - component.update: my_lcd
 
   # - platform: ld2410
   #   detection_distance:
