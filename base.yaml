@@ -294,10 +294,29 @@ display:
         lambda: |-
           Color black = Color(0, 0, 0);
           Color light_grey = id(light_grey_color);
-          it.filled_circle(120, 120, 120, light_grey);
+          it.filled_circle(120, 120, 115, light_grey);
           it.filled_circle(120, 120, 90, black);
           // gap in dimmer
           it.filled_triangle(120, 120, 19, 240, 221, 240, black);
+
+          // dimmer value
+          float min_theta = M_PI * 310 / 180;
+          float max_theta = M_PI * 590 / 180;
+          float dim_theta =
+            (1 - id(dimmer_value).state)
+            * (max_theta - min_theta)
+            + min_theta;
+          it.filled_triangle(
+            // tip
+            120 + 85 * cos(dim_theta),
+            120 - 85 * sin(dim_theta),
+            // left corner
+            120 + 120 * cos(dim_theta + 0.1),
+            120 - 120 * sin(dim_theta + 0.1),
+            // right corner
+            120 + 120 * cos(dim_theta - 0.1),
+            120 - 120 * sin(dim_theta - 0.1),
+            mid_green_color);
 
           // Place outlines on active icons.
           if (id(dimmer_mode).state == "brightness") {
@@ -424,8 +443,6 @@ sensor:
                 id(new_light_brightness).publish_state(id(new_light_brightness).state + 10); }
           # - component.update: my_lcd
           - script.execute: my_light_brightness_script
-
-
     on_anticlockwise:
       - then:
           - lambda: |-
