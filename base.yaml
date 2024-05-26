@@ -198,21 +198,21 @@ number:
     min_value: 0
     max_value: 359.9
     step: 0.1
-    optimistic: true
+    optimistic: True
   - platform: template
     id: color_saturation
     initial_value: 0
     min_value: 0
     max_value: 100
     step: 0.1
-    optimistic: true
+    optimistic: True
   - platform: template
     id: dimmer_value
     initial_value: 0
     min_value: 0
     max_value: 1
     step: 0.001
-    optimistic: true
+    optimistic: True
 
 
   # - platform: ld2410
@@ -278,15 +278,6 @@ number:
     step: 1
     optimistic: true
 
-  # - platform: template
-  #   id: pi
-  #   internal: true
-  #   optimistic: true
-  #   min_value: 3.14159265359
-  #   max_value: 3.14159265360
-  #   step: 0.00000000001
-  #   initial_value: 3.14159265359
-
 
 display:
   - platform: ili9xxx
@@ -301,17 +292,28 @@ display:
     pages:
       - id: LightLevelPage
         lambda: |-
-          int dimmer_min_radius = 90;
-
           Color black = Color(0, 0, 0);
           Color light_grey = id(light_grey_color);
           it.filled_circle(120, 120, 120, light_grey);
-          it.filled_circle(120, 120, dimmer_min_radius, black);
+          it.filled_circle(120, 120, 90, black);
+          // gap in dimmer
+          it.filled_triangle(120, 120, 19, 240, 221, 240, black);
 
+          // Place outlines on active icons.
+          if (id(dimmer_mode).state == "brightness") {
+            it.filled_circle(90, 90, 25, dark_blue_color);
+          } else if (id(dimmer_mode).state == "color_temp") {
+            it.filled_circle(150, 90, 25, dark_blue_color);
+          }
+          it.filled_circle(90, 150, 25, dark_blue_color);
+          it.filled_circle(120, 200, 25, dark_blue_color);
+
+          // Populate icons.
           it.image(90, 90, mdi_brightness_6, ImageAlign::CENTER);
           it.image(150, 90, color_temp_thumbnail, ImageAlign::CENTER);
           it.image(90, 150, mdi_sun_compass, ImageAlign::CENTER);
           it.image(150, 150, color_wheel_thumbnail, ImageAlign::CENTER);
+          it.image(120, 200, mdi_power, ImageAlign::CENTER);
       - id: LightColorPage
         lambda: |-
           it.image(120, 120, color_wheel, ImageAlign::CENTER);
@@ -332,7 +334,12 @@ binary_sensor:
     y_max: 120
     page_id: LightLevelPage
     on_press:
+      then:
         - logger.log: "Brightness Touched"
+        - text_sensor.template.publish:
+           id: dimmer_mode
+           state: brightness
+        - component.update: my_lcd
   - platform: touchscreen
     name: "Color Temp Touch"
     x_min: 120
@@ -343,6 +350,10 @@ binary_sensor:
     on_press:
       then:
         - logger.log: "Color Temp Touched"
+        - text_sensor.template.publish:
+           id: dimmer_mode
+           state: color_temp
+        - component.update: my_lcd
   - platform: touchscreen
     name: "Sun Tracking Touch"
     x_min: 60
@@ -427,12 +438,20 @@ sensor:
           - script.execute: my_light_brightness_script
 
 
-
   - platform: homeassistant
-    name: "Media Volume"
-    id: "beam_volume"
-    entity_id: media_player.full_speaker_2
-    attribute: volume_level
+    name: "Dimmer Light Brightness"
+    id: "dimmersensor_brightness"
+    entity_id: $light_control
+    attribute: brightness
+    on_value:
+      if:
+        condition:
+          not:
+            - script.is_running: my_light_brightness_script
+        then:
+          - lambda: 'id(new_light_brightness).publish_state(x);'
+          # - component.update: my_lcd
+
   # - platform: ld2410
   #   detection_distance:
   #     name: Detection Distance
@@ -510,19 +529,6 @@ sensor:
   #     still_energy:
   #       name: g8 still energy
 
-  - platform: homeassistant
-    name: "Dimmer Light Brightness"
-    id: "dimmersensor_brightness"
-    entity_id: $light_control
-    attribute: brightness
-    on_value:
-      if:
-        condition:
-          not:
-            - script.is_running: my_light_brightness_script
-        then:
-          - lambda: 'id(new_light_brightness).publish_state(x);'
-          # - component.update: my_lcd
 
 light:
   - platform: monochromatic
@@ -549,28 +555,18 @@ output:
 #       name: "control bluetooth"
 
 text_sensor:
+  - platform: template
+    internal: true
+    id: dimmer_mode
+    lambda: |-
+      return {"brightness"};
 
   # - platform: ld2410
   #   version:
   #     name: "firmware version"
   #   mac_address:
   #     name: "mac address"
-  - platform: homeassistant
-    name: "Dimmer Light Sensor"
-    id: "dimmersensor"
-    entity_id: $light_control
-    filters:
-      - to_upper:
-  - platform: homeassistant
-    name: "Media Player Mute"
-    id: "mediaplayermute"
-    entity_id: media_player.full_speaker_2
-    attribute: is_volume_muted
+
   - platform: template
     name: "RTC Sensor"
     id: template_text
-  - platform: wifi_info
-    ip_address:
-      name: ESP IP Address
-      id: espip
-
